@@ -3,6 +3,7 @@ import re
 import shutil
 from pathlib import Path
 import tempfile
+import os
 
 import smoketests
 from .. import Smoketest, STDB_DIR, run_cmd, TEMPLATE_CARGO_TOML
@@ -18,12 +19,12 @@ def _append_to_file(path: Path, content: str):
         f.write(content)
 
 
-def _parse_quickstart(doc_path: Path, language: str) -> str:
+def _parse_quickstart(doc_path: Path, language: str, extra_langs: list[str] = None) -> str:
     """Extract code blocks from `quickstart.md` docs.
     This will replicate the steps in the quickstart guide, so if it fails the quickstart guide is broken.
     """
     content = Path(doc_path).read_text()
-    blocks = re.findall(rf"```{language}\n(.*?)\n```", content, re.DOTALL)
+    blocks = re.findall(rf"```(?:{'|'.join([language, *extra_langs])})\n(.*?)\n```", content, re.DOTALL)
 
     end = ""
     if language == "csharp":
@@ -60,6 +61,8 @@ class BaseQuickstart(Smoketest):
     MODULE_CODE = ""
 
     lang = None
+    client_lang = None
+    codeblock_lang = None
     server_doc = None
     client_doc = None
     server_file = None
@@ -92,7 +95,7 @@ class BaseQuickstart(Smoketest):
         self.spacetime("init", "--lang", self.lang, server_path, capture_stderr=True)
         shutil.copy2(STDB_DIR / "rust-toolchain.toml", server_path)
         # Replay the quickstart guide steps
-        _write_file(server_path / self.server_file, _parse_quickstart(self.server_doc, self.lang))
+        _write_file(server_path / self.server_file, _parse_quickstart(self.server_doc, self.lang, self.codeblock_lang))
         self.server_postprocess(server_path)
         self.spacetime("build", "-d", "-p", server_path, capture_stderr=True)
 
@@ -115,12 +118,12 @@ class BaseQuickstart(Smoketest):
         run_cmd(*self.build_cmd, cwd=client_path, capture_stderr=True)
 
         self.spacetime(
-            "generate", "--lang", self.lang,
+            "generate", "--lang", self.client_lang or self.lang,
             "--out-dir", client_path / self.module_bindings,
             "--project-path", self.project_path, capture_stderr=True
         )
         # Replay the quickstart guide steps
-        main = _parse_quickstart(self.client_doc, self.lang)
+        main = _parse_quickstart(self.client_doc, self.lang, self.codeblock_lang)
         for src, dst in self.replacements.items():
             main = main.replace(src, dst)
         main += "\n" + self.extra_code
@@ -256,4 +259,33 @@ Main();
         """Run the C# quickstart guides for server and client."""
         if not smoketests.HAVE_DOTNET:
             self.skipTest("C# SDK requires .NET to be installed.")
+        self._test_quickstart()
+
+class TypeScript(BaseQuickstart):
+    lang = "typescript"
+    client_lang = "rust"
+    codeblock_lang = ["ts", "tsx", "rust"]
+    server_doc = STDB_DIR / "docs/docs/modules/typescript/quickstart.md"
+    client_doc = Rust.client_doc
+    server_file = "src/index.ts"
+    client_file = Rust.client_file
+    module_bindings = Rust.module_bindings
+    run_cmd = Rust.run_cmd
+    build_cmd = Rust.build_cmd
+
+    replacements = Rust.replacements
+    extra_code = Rust.extra_code
+    connected_str = Rust.connected_str
+
+    project_init = Rust.project_init
+
+
+    sdk_setup = Rust.sdk_setup
+
+    def server_postprocess(self, server_path: Path):
+        spacetimedb_dep = "spacetimedb@file:" + str((STDB_DIR / "sdks/typescript").absolute())
+        run_cmd("pnpm", "install", spacetimedb_dep, cwd=server_path)
+
+    def test_quickstart(self):
+        """Run the TypeScript quickstart guides for server."""
         self._test_quickstart()

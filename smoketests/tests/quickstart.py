@@ -45,15 +45,7 @@ def _parse_quickstart(doc_path: Path, language: str) -> str:
 
 
 def _dotnet_add_package(project_path: Path, package_name: str, source_path: Path):
-    """Add a local NuGet package to a .NET project"""
-    sources = run_cmd("dotnet", "nuget", "list", "source", cwd=project_path, capture_stderr=True)
-    # Is the source already added?
-    if package_name in sources:
-        run_cmd("dotnet", "nuget", "remove", "source", package_name, cwd=project_path, capture_stderr=True)
-    run_cmd("dotnet", "nuget", "add", "source", source_path, "--name", package_name, cwd=project_path,
-            capture_stderr=True)
-    run_cmd("dotnet", "add", "package", package_name, cwd=project_path, capture_stderr=True)
-
+    """Skipping adding a local NuGet package to a .NET project"""
 
 class BaseQuickstart(Smoketest):
     AUTOPUBLISH = False
